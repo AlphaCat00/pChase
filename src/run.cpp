@@ -28,7 +28,8 @@
 #endif
 
 // Local includes
-#include <AsmJit/AsmJit.h>
+#include <asmjit/core.h>
+#include <asmjit/a64.h>
 #include "timer.h"
 
 
@@ -36,13 +37,8 @@
 // Implementation
 //
 
-typedef void (*benchmark)(const Chain**);
-typedef benchmark (*generator)(int64 chains_per_thread,
-		int64 bytes_per_line, int64 bytes_per_chain,
-		int64 stride, int64 loop_length, int32 prefetch_hint);
-static benchmark chase_pointers(int64 chains_per_thread,
-		int64 bytes_per_line, int64 bytes_per_chain,
-		int64 stride, int64 loop_length, int32 prefetch_hint);
+typedef void (*benchmark)(Chain**);
+static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp);
 
 Lock Run::global_mutex;
 int64 Run::_ops_per_chain = 0;
@@ -78,10 +74,10 @@ int Run::run() {
 	// memory will be allocated.
 	for (int i=0; i < this->exp->chains_per_thread; i++) {
 		int alloc_node_id = this->exp->chain_domain[this->thread_id()][i];
-		nodemask_t alloc_mask;
-		nodemask_zero(&alloc_mask);
-		nodemask_set(&alloc_mask, alloc_node_id);
-		numa_set_membind(&alloc_mask);
+        bitmask* alloc_mask = numa_allocate_nodemask();
+   		numa_bitmask_setbit(alloc_mask, alloc_node_id);
+    	numa_set_membind(alloc_mask);
+    	numa_bitmask_free(alloc_mask);
 
 		chain_memory[i] = new Chain[ this->exp->links_per_chain ];
 	}
@@ -94,26 +90,21 @@ int Run::run() {
 	// initialize the chains and
 	// select the function that
 	// will generate the tests
-	generator gen;
 	for (int i = 0; i < this->exp->chains_per_thread; i++) {
 		if (this->exp->access_pattern == Experiment::RANDOM) {
 			root[i] = random_mem_init(chain_memory[i]);
-			gen = chase_pointers;
 		} else if (this->exp->access_pattern == Experiment::STRIDED) {
 			if (0 < this->exp->stride) {
 				root[i] = forward_mem_init(chain_memory[i]);
 			} else {
 				root[i] = reverse_mem_init(chain_memory[i]);
 			}
-			gen = chase_pointers;
 		}
 	}
 
 	// compile benchmark
-	benchmark bench = gen(this->exp->chains_per_thread,
-			this->exp->bytes_per_line, this->exp->bytes_per_chain,
-			this->exp->stride, this->exp->loop_length,
-			this->exp->prefetch_hint);
+	asmjit::JitRuntime rt;
+	benchmark bench = chase_pointers(rt, *this->exp);
 
 	// calculate the number of iterations
 	/*
@@ -140,7 +131,7 @@ int Run::run() {
 
 			// chase pointers
 			for (int i = 0; i < iters; i++)
-				bench((const Chain**) root);
+				bench(root);
 
 			// barrier
 			this->bp->barrier();
@@ -179,7 +170,7 @@ int Run::run() {
 
 		// chase pointers
 		for (int i = 0; i < this->exp->iterations; i++)
-			bench((const Chain**) root);
+			bench(root);
 
 		// barrier
 		this->bp->barrier();
@@ -346,92 +337,97 @@ Run::reverse_mem_init(Chain *mem) {
 	return root;
 }
 
-static benchmark chase_pointers(int64 chains_per_thread, // memory loading per thread
-		int64 bytes_per_line, // ignored
-		int64 bytes_per_chain, // ignored
-		int64 stride, // ignored
-		int64 loop_length, // length of the inner loop
-		int32 prefetch_hint // use of prefetching
-		) {
+static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
+	using namespace asmjit;
+	using namespace a64;
 	// Create Compiler.
-	AsmJit::Compiler c;
+	CodeHolder code;                  // Holds code and relocation information.
+  	code.init(rt.environment());      // Initialize code to match the JIT environment. 
+
+	Compiler c(&code);	// Create and attach Compiler to code.
 
   	// Tell compiler the function prototype we want. It allocates variables representing
 	// function arguments that can be accessed through Compiler or Function instance.
-	c.newFunction(AsmJit::CALL_CONV_DEFAULT, AsmJit::FunctionBuilder1<AsmJit::Void, const Chain**>());
+	FuncNode* funcNode = c.addFunc(FuncSignatureT<void, Chain**>());
 
 	// Try to generate function without prolog/epilog code:
-	c.getFunction()->setHint(AsmJit::FUNCTION_HINT_NAKED, true);
+	// c.getFunction()->setHint(asmjit::FUNCTION_HINT_NAKED, true);
 
 	// Create labels.
-	AsmJit::Label L_Loop = c.newLabel();
+	Label L_Loop = c.newLabel();
 
 	// Function arguments.
-	AsmJit::GPVar chain(c.argGP(0));
+	Gp chain=c.newUIntPtr();
+	funcNode->setArg(0,chain);
+
 
 	// Save the head
-	std::vector<AsmJit::GPVar> heads(chains_per_thread);
-	for (int i = 0; i < chains_per_thread; i++) {
-		AsmJit::GPVar head = c.newGP();
-		c.mov(head, ptr(chain));
-		heads[i] = head;
-	}
+	Gp head = c.newUIntPtr();
+	c.ldr(head, ptr(chain));
 
 	// Current position
-	std::vector<AsmJit::GPVar> positions(chains_per_thread);
-	for (int i = 0; i < chains_per_thread; i++) {
-		AsmJit::GPVar position = c.newGP();
-		c.mov(position, heads[0]);
+	std::vector<Gp> positions(exp.chains_per_thread);
+	for (int i = 0; i < exp.chains_per_thread; i++) {
+		Gp position = c.newUIntPtr();
+		c.ldr(position,ptr(chain,i*sizeof(Chain *)));
 		positions[i] = position;
 	}
 
+	Gp val = c.newUInt64();
+	c.ldr(val,100);
 	// Loop.
 	c.bind(L_Loop);
 
 	// Process all links
-	for (int i = 0; i < chains_per_thread; i++) {
+	for (int i = 0; i < exp.chains_per_thread; i++) {
 		// Chase pointer
-		c.mov(positions[i], ptr(positions[i], offsetof(Chain, next)));
+		c.ldr(positions[i], ptr(positions[i], offsetof(Chain, next)));
+		if(exp.mem_operation==Experiment::LOAD){
+			c.ldr(val, ptr(positions[i], offsetof(Chain, data)));
+		}else if(exp.mem_operation==Experiment::STORE){
+			c.str(val, ptr(positions[i], offsetof(Chain, data)));
+		}		
 
 		// Prefetch next
-		switch (prefetch_hint)
-		{
-		case Experiment::T0:
-			c.prefetch(ptr(positions[i]), AsmJit::PREFETCH_T0);
-			break;
-		case Experiment::T1:
-			c.prefetch(ptr(positions[i]), AsmJit::PREFETCH_T1);
-			break;
-		case Experiment::T2:
-			c.prefetch(ptr(positions[i]), AsmJit::PREFETCH_T2);
-			break;
-		case Experiment::NTA:
-			c.prefetch(ptr(positions[i]), AsmJit::PREFETCH_NTA);
-			break;
-		case Experiment::NONE:
-		default:
-			break;
-
-		}
+		// switch (prefetch_hint)
+		// {
+		// case Experiment::T0:
+		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_T0);
+		// 	break;
+		// case Experiment::T1:
+		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_T1);
+		// 	break;
+		// case Experiment::T2:
+		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_T2);
+		// 	break;
+		// case Experiment::NTA:
+		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_NTA);
+		// 	break;
+		// case Experiment::NONE:
+		// default:
+		// 	break;
+		// }
 	}
 
 	// Wait
-	for (int i = 0; i < loop_length; i++)
+	for (int i = 0; i < exp.loop_length; i++)
 		c.nop();
 
 	// Test if end reached
-	c.cmp(heads[0], positions[0]);
-	c.jne(L_Loop);
+	c.cmp(head, positions[0]);
+	c.b(CondCode::kNE,L_Loop);
+
 
 	// Finish.
-	c.endFunction();
+	c.endFunc();
+	c.finalize();
 
-	// Make JIT function.
-	benchmark fn = AsmJit::function_cast<benchmark>(c.make());
-
-	// Ensure that everything is ok.
-	if (!fn) {
-		printf("Error making jit function (%u).\n", c.getError());
+	// Add the generated code to the runtime.
+  	benchmark fn;
+  	Error err = rt.add(&fn, &code);
+	// Handle a possible error returned by AsmJit.
+	if (err) {
+		printf("Error making jit function (%u).\n", err);
 		return 0;
 	}
 

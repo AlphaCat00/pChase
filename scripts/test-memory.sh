@@ -19,25 +19,19 @@ uname -a > kernel.txt
 cat /proc/cpuinfo > cpuinfo.txt
 cat /proc/meminfo > meminfo.txt
 
-
+pchase=../../builddir/chase 
 #
 # Benchmark
 #
 
 echo Benchmark initiated at $(date +%Y%m%d-%H%M) | tee -a chase.log
 
-chase -o hdr | tee $output
-for chain_size in 8k 16k 64k 256k 512k 1m 2m 3m 6m 12m
+$pchase -o hdr | tee $output
+for access in random "forward 1" "forward 2" "forward 4" "forward 8" "forward 16" "reverse 1" "reverse 2" "reverse 4" "reverse 8" "reverse 16"
 do
-    for loop_size in 0 25 100 500 2500
+    for mem_op in none load store
     do
-		for access in random "forward 1"
-		do
-            for prefetch in none nta t0 t1 t2
-            do
-                chase -c $chain_size -g $loop_size -a $access -f $prefetch -s 1.0 -e 5 -o csv | tee -a $output
-            done
-        done
+        $pchase -n add 1 -c 32m -m $mem_op -a $access -s 1.0 -o csv | tee -a $output
     done
 done
 

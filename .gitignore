@@ -18,3 +18,9 @@ core
 .cproject
 .project
 
+.vscode
+
+builddir
+subprojects/asmjit
+
+scripts/chase-*

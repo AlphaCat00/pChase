@@ -21,16 +21,6 @@
 #include <cstdio>
 #include <sys/time.h>
 
-static int64 read_rtc();
-static void calibrate_rtc(int n);
-static double wall_seconds();
-
-static int wall_ticks = -1;
-static int rtc_ticks = -1;
-static double wall_elapsed = -1;
-static int64 rtc_elapsed = -1;
-static double time_factor = -1;
-
 #if !defined(RTC) && !defined(GTOD)
 #define RTC
 #endif
@@ -41,6 +31,17 @@ static double time_factor = -1;
 //
 
 #if defined(RTC)
+
+static int64 read_rtc();
+static void calibrate_rtc(int n);
+static double wall_seconds();
+
+static int wall_ticks = -1;
+static int rtc_ticks = -1;
+static double wall_elapsed = -1;
+static int64 rtc_elapsed = -1;
+static double time_factor = -1;
+
 
 double Timer::seconds() {
 	return (double) read_rtc() * time_factor;

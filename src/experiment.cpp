@@ -55,6 +55,7 @@ Experiment::Experiment() :
     iterations       (DEFAULT_ITERATIONS),
     experiments      (DEFAULT_EXPERIMENTS),
     prefetch_hint    (NONE),
+	mem_operation    (NA),
     output_mode      (TABLE),
     access_pattern   (RANDOM),
     stride           (1),
@@ -260,6 +261,25 @@ int Experiment::parse_args(int argc, char* argv[]) {
 				error = true;
 				break;
 			}
+		}else if (strcasecmp(argv[i], "-m") == 0
+				|| strcasecmp(argv[i], "--operartion") == 0) {
+			i++;
+			if (i == argc) {
+				strncpy(errorString, "type of operartion missing", errorStringSize);
+				error = true;
+				break;
+			}
+			if (strcasecmp(argv[i], "none") == 0) {
+				this->mem_operation = Experiment::NA;
+			} else if (strcasecmp(argv[i], "load") == 0) {
+				this->mem_operation = Experiment::LOAD;
+			} else if (strcasecmp(argv[i], "store") == 0) {
+				this->mem_operation = Experiment::STORE;
+			}  else {
+				snprintf(errorString, errorStringSize, "invalid type of operartion -- '%s'", argv[i]);
+				error = true;
+				break;
+			}
 		} else if (strcasecmp(argv[i], "-a") == 0
 				|| strcasecmp(argv[i], "--access") == 0) {
 			i++;
@@ -397,6 +417,7 @@ int Experiment::parse_args(int argc, char* argv[]) {
 		printf("    [-i|--iterations]  <number>    # iterations per experiment\n");
 		printf("    [-e|--experiments] <number>    # experiments\n");
 		printf("    [-a|--access]      <pattern>   # memory access pattern\n");
+		printf("    [-m|--operation]   <operation> # memory operation\n");
 		printf("    [-o|--output]      <format>    # output format\n");
 		printf("    [-n|--numa]        <placement> # numa placement\n");
 		printf("    [-s|--seconds]     <number>    # run each experiment for <number> seconds\n");

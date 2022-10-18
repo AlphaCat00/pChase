@@ -17,7 +17,7 @@
 // Include guard
 #if !defined(CHAIN_H)
 #define CHAIN_H
-
+#include<stdint.h>
 
 //
 // Struct definition
@@ -32,6 +32,7 @@
 
 struct Chain {
 	Chain* next;
+	uint64_t data;
 };
 
 #endif
