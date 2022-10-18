@@ -63,6 +63,11 @@
 int verbose = 0;
 
 int main(int argc, char* argv[]) {
+#ifdef DEBUG
+	fprintf(stderr, "DEBUG (low performance)\n");
+#else
+    fprintf(stderr, "NDEBUG\n");
+#endif
 	Timer::calibrate(10000);
 	double clk_res = Timer::resolution();
 

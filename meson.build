@@ -1,4 +1,10 @@
 project('pChase','cpp')
+
+if get_option('buildtype').startswith('debug')
+  add_project_arguments('-DDEBUG', language : 'cpp')
+  message('DEBUG')
+endif
+
 add_project_arguments('-DGTOD', language : 'cpp')
 
 dependencies = []

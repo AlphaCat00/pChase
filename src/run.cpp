@@ -368,13 +368,17 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 	// Current position
 	std::vector<Gp> positions(exp.chains_per_thread);
 	for (int i = 0; i < exp.chains_per_thread; i++) {
-		Gp position = c.newUIntPtr();
-		c.ldr(position,ptr(chain,i*sizeof(Chain *)));
-		positions[i] = position;
+		positions[i] = c.newUIntPtr();
+		c.ldr(positions[i], ptr(chain,i*sizeof(Chain *)));
 	}
 
-	Gp val = c.newUInt64();
-	c.ldr(val,100);
+	uint32_t val_num=exp.mem_operation==Experiment::STORE_ALL||exp.mem_operation==Experiment::LOAD_ALL?abs(exp.stride):1;
+	std::vector<Gp> vals(val_num);
+	for (uint32_t i = 0; i < val_num; i++) {
+		vals[i] = c.newUInt64();
+		c.mov(vals[i], 100 * i);
+	}
+
 	// Loop.
 	c.bind(L_Loop);
 
@@ -383,10 +387,16 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 		// Chase pointer
 		c.ldr(positions[i], ptr(positions[i], offsetof(Chain, next)));
 		if(exp.mem_operation==Experiment::LOAD){
-			c.ldr(val, ptr(positions[i], offsetof(Chain, data)));
+			c.ldr(vals[0], ptr(positions[i], offsetof(Chain, data)));
 		}else if(exp.mem_operation==Experiment::STORE){
-			c.str(val, ptr(positions[i], offsetof(Chain, data)));
-		}		
+			c.str(vals[0], ptr(positions[i], offsetof(Chain, data)));
+		}else if(exp.mem_operation==Experiment::LOAD_ALL){
+			for (uint32_t j = 0; j < val_num; j++) 
+				c.ldr(vals[j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
+		}else if(exp.mem_operation==Experiment::STORE_ALL){
+			for (uint32_t j = 0; j < val_num; j++) 
+				c.str(vals[j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
+		}
 
 		// Prefetch next
 		// switch (prefetch_hint)

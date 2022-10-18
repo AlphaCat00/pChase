@@ -275,6 +275,10 @@ int Experiment::parse_args(int argc, char* argv[]) {
 				this->mem_operation = Experiment::LOAD;
 			} else if (strcasecmp(argv[i], "store") == 0) {
 				this->mem_operation = Experiment::STORE;
+			} else if (strcasecmp(argv[i], "load_all") == 0) {
+				this->mem_operation = Experiment::LOAD_ALL;
+			} else if (strcasecmp(argv[i], "store_all") == 0) {
+				this->mem_operation = Experiment::STORE_ALL;
 			}  else {
 				snprintf(errorString, errorStringSize, "invalid type of operartion -- '%s'", argv[i]);
 				error = true;
@@ -719,46 +723,6 @@ void Experiment::alloc_map() {
 	this->bytes_per_test = this->bytes_per_thread * this->num_threads;
 }
 
-void Experiment::print() {
-	printf("strict            = %s\n", strict?"yes":"no");
-	printf("pointer_size      = %d\n", pointer_size);
-	printf("sizeof(Chain)     = %d\n", sizeof(Chain));
-	printf("sizeof(Chain *)   = %d\n", sizeof(Chain *));
-	printf("bytes_per_line    = %d\n", bytes_per_line);
-	printf("links_per_line    = %d\n", links_per_line);
-	printf("bytes_per_page    = %d\n", bytes_per_page);
-	printf("lines_per_page    = %d\n", lines_per_page);
-	printf("links_per_page    = %d\n", links_per_page);
-	printf("bytes_per_chain   = %d\n", bytes_per_chain);
-	printf("lines_per_chain   = %d\n", lines_per_chain);
-	printf("links_per_chain   = %d\n", links_per_chain);
-	printf("pages_per_chain   = %d\n", pages_per_chain);
-	printf("chains_per_thread = %d\n", chains_per_thread);
-	printf("bytes_per_thread  = %d\n", bytes_per_thread);
-	printf("num_threads       = %d\n", num_threads);
-	printf("bytes_per_test    = %d\n", bytes_per_test);
-	printf("loop length       = %d\n", loop_length);
-	printf("prefetch hint     = %s\n", prefetch_hint_string(prefetch_hint));
-	printf("iterations        = %d\n", iterations);
-	printf("experiments       = %d\n", experiments);
-	printf("access_pattern    = %d\n", access_pattern);
-	printf("stride            = %d\n", stride);
-	printf("output_mode       = %d\n", output_mode);
-	printf("numa_placement    = %d\n", numa_placement);
-	printf("offset_or_mask    = %d\n", offset_or_mask);
-	printf("numa_max_domain   = %d\n", numa_max_domain);
-	printf("num_numa_domains  = %d\n", num_numa_domains);
-
-	for (int i = 0; i < this->num_threads; i++) {
-		printf("%d: ", this->thread_domain[i]);
-		for (int j = 0; j < this->chains_per_thread; j++) {
-			printf("%d,", this->chain_domain[i][j]);
-		}
-		printf("\n");
-	}
-
-	fflush(stdout);
-}
 
 const char* Experiment::access() {
 	const char* result = NULL;

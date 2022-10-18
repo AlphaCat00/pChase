@@ -63,7 +63,7 @@ public:
     enum { NONE, T0, T1, T2, NTA }
     prefetch_hint;			// use of prefetching
 
-    enum { NA, LOAD, STORE }
+    enum { NA, LOAD, STORE, LOAD_ALL, STORE_ALL }
 	mem_operation;			// memory operation
 
     enum { CSV, BOTH, HEADER, TABLE }
@@ -112,7 +112,6 @@ public:
 	void alloc_add();
 	void alloc_map();
 
-	void print();
 
 private:
 };
@@ -138,6 +137,10 @@ inline const char* operation_string(int32 operation) {
 		return "load";
 	case Experiment::STORE:
 		return "store";
+    case Experiment::LOAD_ALL:
+		return "load_all";
+	case Experiment::STORE_ALL:
+		return "store_all";
 	}
     return "none";
 }
