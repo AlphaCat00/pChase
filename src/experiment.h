@@ -63,8 +63,9 @@ public:
     enum { NONE, T0, T1, T2, NTA }
     prefetch_hint;			// use of prefetching
 
-    enum { NA, LOAD, STORE, LOAD_ALL, STORE_ALL }
+    enum { NA, LOAD, STORE, ITER_LOAD, ITER_STORE }
 	mem_operation;			// memory operation
+    int64 op_size;
 
     enum { CSV, BOTH, HEADER, TABLE }
 	output_mode;			// results output mode
@@ -132,17 +133,8 @@ inline const char* prefetch_hint_string(int32 prefetch_hint) {
 }
 
 inline const char* operation_string(int32 operation) {
-	switch (operation) {
-	case Experiment::LOAD:
-		return "load";
-	case Experiment::STORE:
-		return "store";
-    case Experiment::LOAD_ALL:
-		return "load_all";
-	case Experiment::STORE_ALL:
-		return "store_all";
-	}
-    return "none";
+    static const char *strings[]={"none", "load", "store", "iter_load", "iter_store"};
+    return strings[operation];
 }
 
 #endif

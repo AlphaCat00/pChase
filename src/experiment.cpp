@@ -56,6 +56,7 @@ Experiment::Experiment() :
     experiments      (DEFAULT_EXPERIMENTS),
     prefetch_hint    (NONE),
 	mem_operation    (NA),
+	op_size			 (1),
     output_mode      (TABLE),
     access_pattern   (RANDOM),
     stride           (1),
@@ -269,20 +270,36 @@ int Experiment::parse_args(int argc, char* argv[]) {
 				error = true;
 				break;
 			}
+			bool has_op_size = true;
 			if (strcasecmp(argv[i], "none") == 0) {
 				this->mem_operation = Experiment::NA;
+				has_op_size = false;
 			} else if (strcasecmp(argv[i], "load") == 0) {
 				this->mem_operation = Experiment::LOAD;
 			} else if (strcasecmp(argv[i], "store") == 0) {
-				this->mem_operation = Experiment::STORE;
-			} else if (strcasecmp(argv[i], "load_all") == 0) {
-				this->mem_operation = Experiment::LOAD_ALL;
-			} else if (strcasecmp(argv[i], "store_all") == 0) {
-				this->mem_operation = Experiment::STORE_ALL;
-			}  else {
+				this->mem_operation = Experiment::STORE;		
+			} else if (strcasecmp(argv[i], "iter_load") == 0) {
+				this->mem_operation = Experiment::ITER_LOAD;
+			} else if (strcasecmp(argv[i], "iter_store") == 0) {
+				this->mem_operation = Experiment::ITER_STORE;
+			} else {
 				snprintf(errorString, errorStringSize, "invalid type of operartion -- '%s'", argv[i]);
 				error = true;
 				break;
+			}
+			if(has_op_size){
+				i++;
+				if (i == argc) {
+					strncpy(errorString, "operation size of memory operartion missing", errorStringSize);
+					error = true;
+					break;
+				}
+				this->op_size = Experiment::parse_number(argv[i]);
+				if (this->op_size == 0) {
+					strncpy(errorString, "invalid operation size of memory operartion", errorStringSize);
+					error = true;
+					break;
+				}
 			}
 		} else if (strcasecmp(argv[i], "-a") == 0
 				|| strcasecmp(argv[i], "--access") == 0) {

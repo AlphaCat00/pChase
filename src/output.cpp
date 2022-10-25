@@ -58,6 +58,7 @@ void Output::header(Experiment &e, int64 ops, double ck_res) {
     printf("loop length,");
     printf("prefetch hint,");
     printf("memory operation,");
+    printf("operation size,");
     printf("experiments,");
     printf("access pattern,");
     printf("stride,");
@@ -89,6 +90,7 @@ void Output::csv(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("%lld,", e.loop_length);
     printf("%s,", prefetch_hint_string(e.prefetch_hint));
     printf("%s,", operation_string(e.mem_operation));
+    printf("%lld,", e.op_size);
     printf("%lld,", e.experiments);
     printf("%s,", e.access());
     printf("%lld,", e.stride);
@@ -115,8 +117,7 @@ void Output::csv(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("%.0f,", secs/ck_res);
     printf("%.2f,", ck_res * 1E9);
     printf("%.2f,", (secs / (ops * e.iterations)) * 1E9);
-    uint32_t line_num=e.mem_operation==Experiment::STORE_ALL||e.mem_operation==Experiment::LOAD_ALL?abs(e.stride):1;
-    printf("%.3f\n", ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * line_num) / secs) * 1E-6);
+    printf("%.3f\n", ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * e.op_size) / secs) * 1E-6);
 
     fflush(stdout);
 }
@@ -134,6 +135,7 @@ void Output::table(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("loop length          = %lld\n", e.loop_length);
     printf("prefetch hint        = %s\n", prefetch_hint_string(e.prefetch_hint));
     printf("memory operation     = %s\n", operation_string(e.mem_operation));
+    printf("operation size       = %lld\n", e.op_size);
     printf("experiments          = %lld\n", e.experiments);
     printf("access pattern       = %s\n", e.access());
     printf("stride               = %lld\n", e.stride);
@@ -161,8 +163,7 @@ void Output::table(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("elapsed time         = %.0f (timer ticks)\n", secs/ck_res);
     printf("clock resolution     = %.2f (ns)\n", ck_res * 1E9);
     printf("memory latency       = %.2f (ns)\n", (secs / (ops * e.iterations)) * 1E9);
-    uint32_t line_num=e.mem_operation==Experiment::STORE_ALL||e.mem_operation==Experiment::LOAD_ALL?abs(e.stride):1;
-    printf("memory bandwidth     = %.3f (MB/s)\n", ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * line_num) / secs) * 1E-6);
+    printf("memory bandwidth     = %.3f (MB/s)\n", ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * e.op_size) / secs) * 1E-6);
 
     fflush(stdout);
 }

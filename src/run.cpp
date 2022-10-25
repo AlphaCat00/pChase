@@ -340,6 +340,14 @@ Run::reverse_mem_init(Chain *mem) {
 static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 	using namespace asmjit;
 	using namespace a64;
+
+	bool is_iter=exp.mem_operation==Experiment::ITER_LOAD||exp.mem_operation==Experiment::ITER_STORE;
+	if(is_iter){
+		if(exp.access_pattern != Experiment::STRIDED||exp.stride<1){
+			fprintf(stderr, "access pattern not supported.\n");
+			return 0;
+		}
+	}
 	// Create Compiler.
 	CodeHolder code;                  // Holds code and relocation information.
   	code.init(rt.environment());      // Initialize code to match the JIT environment. 
@@ -362,8 +370,13 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 
 
 	// Save the head
-	Gp head = c.newUIntPtr();
-	c.ldr(head, ptr(chain));
+	Gp end = c.newUIntPtr(), bytes=c.newInt64();
+	c.ldr(end, ptr(chain));
+	if(is_iter) {
+		c.mov(bytes, exp.bytes_per_line * exp.lines_per_chain);
+		c.add(end, end, bytes);
+		c.mov(bytes, exp.bytes_per_line * exp.stride);
+	}
 
 	// Current position
 	std::vector<Gp> positions(exp.chains_per_thread);
@@ -372,11 +385,13 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 		c.ldr(positions[i], ptr(chain,i*sizeof(Chain *)));
 	}
 
-	uint32_t val_num=exp.mem_operation==Experiment::STORE_ALL||exp.mem_operation==Experiment::LOAD_ALL?abs(exp.stride):1;
-	std::vector<Gp> vals(val_num);
-	for (uint32_t i = 0; i < val_num; i++) {
-		vals[i] = c.newUInt64();
-		c.mov(vals[i], 100 * i);
+	std::vector<std::vector<Gp>> vals(exp.chains_per_thread);
+	for (int i = 0; i < exp.chains_per_thread; i++){
+		vals[i].resize(exp.op_size);
+		for (uint32_t j = 0; j < exp.op_size; j++) {
+			vals[i][j] = c.newUInt64();
+			c.mov(vals[i][j], 100 * i * j);
+		}
 	}
 
 	// Loop.
@@ -385,19 +400,22 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 	// Process all links
 	for (int i = 0; i < exp.chains_per_thread; i++) {
 		// Chase pointer
-		c.ldr(positions[i], ptr(positions[i], offsetof(Chain, next)));
-		if(exp.mem_operation==Experiment::LOAD){
-			c.ldr(vals[0], ptr(positions[i], offsetof(Chain, data)));
-		}else if(exp.mem_operation==Experiment::STORE){
-			c.str(vals[0], ptr(positions[i], offsetof(Chain, data)));
-		}else if(exp.mem_operation==Experiment::LOAD_ALL){
-			for (uint32_t j = 0; j < val_num; j++) 
-				c.ldr(vals[j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
-		}else if(exp.mem_operation==Experiment::STORE_ALL){
-			for (uint32_t j = 0; j < val_num; j++) 
-				c.str(vals[j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
+		if(!is_iter) c.ldr(positions[i], ptr(positions[i], offsetof(Chain, next)));
+		switch (exp.mem_operation)
+		{
+		case Experiment::ITER_LOAD:
+		case Experiment::LOAD:
+			for (uint32_t j = 0; j < exp.op_size; j++) 
+				c.ldr(vals[i][j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
+			break;
+		case Experiment::ITER_STORE:
+		case Experiment::STORE:
+			for (uint32_t j = 0; j < exp.op_size; j++) 
+				c.str(vals[i][j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
+			break;
+		case Experiment::NA:;
 		}
-
+		if(is_iter) c.add(positions[i], positions[i], bytes); // only work for forward access
 		// Prefetch next
 		// switch (prefetch_hint)
 		// {
@@ -424,8 +442,8 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 		c.nop();
 
 	// Test if end reached
-	c.cmp(head, positions[0]);
-	c.b(CondCode::kNE,L_Loop);
+	c.cmp(positions[0],end);
+	c.b(is_iter? CondCode::kCC:CondCode::kNE, L_Loop);
 
 
 	// Finish.
