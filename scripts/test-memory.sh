@@ -23,7 +23,7 @@ pchase=../../builddir/chase
 
 mem_bind=1
 thread_num=4
-exp=2
+exp=3
 #
 # Benchmark
 #
@@ -93,6 +93,15 @@ elif [ $exp == 2 ] ; then
         done
     done    
     python3 ../convert.py $output "memory operation,operation size,access pattern,number of threads,memory latency (ns),memory bandwidth (MB/s)" > simplified_$output
+elif [ $exp == 3 ] ; then  
+    for mem_op in "load" "store"; do
+        for loop_size in 0 5 25 125 625 3125; do
+            for op_size in 1 2 4 8 16 ; do 
+                $pchase -c 32m -p 32m -g $loop_size -m $mem_op $op_size -a random -s 3.0 -n map "0:$mem_bind" -o csv | tee -a $output
+            done
+        done
+    done    
+    python3 ../convert.py $output "memory operation,operation size,access pattern,loop length,memory latency (ns),memory bandwidth (MB/s)" > simplified_$output
 fi
 echo Benchmark ended at $(date +%Y%m%d-%H%M) | tee -a chase.log
 
