@@ -79,7 +79,7 @@ int Run::run() {
     	numa_set_membind(alloc_mask);
     	numa_bitmask_free(alloc_mask);
 
-		chain_memory[i] = new Chain[ this->exp->links_per_chain ];
+		chain_memory[i] = new Chain[ this->exp->links_per_chain + this->exp->op_size*this->exp->links_per_line];
 	}
 #else
 	for (int i = 0; i < this->exp->chains_per_thread; i++) {
@@ -99,6 +99,9 @@ int Run::run() {
 			} else {
 				root[i] = reverse_mem_init(chain_memory[i]);
 			}
+		}else if(this->exp->access_pattern == Experiment::INTERLEAVED){
+			root[i] = random_mem_init(chain_memory[i]);
+			root[i] = interleaved_mem_init(chain_memory[i], root[i]);
 		}
 	}
 
@@ -334,6 +337,34 @@ Run::reverse_mem_init(Chain *mem) {
 	Run::_ops_per_chain = local_ops_per_chain;
 	Run::global_mutex.unlock();
 
+	return root;
+}
+
+Chain*
+Run::interleaved_mem_init(Chain *mem, Chain * root){
+	int64 local_size= int64(this->exp->interleaved_precent*this->exp->lines_per_chain)*this->exp->links_per_line;
+	bitmask* alloc_mask = numa_allocate_nodemask();
+	numa_bitmask_setbit(alloc_mask, 0); //TODO: numa node
+	numa_set_membind(alloc_mask);
+	numa_bitmask_free(alloc_mask);
+	Chain *extra=new Chain[ this->exp->links_per_chain- local_size +this->exp->op_size*this->exp->links_per_line];//TODO: memory leak
+	for (int64 i = 0; i < this->exp->links_per_chain; i+=this->exp->links_per_line){
+		if(mem[i].next - mem >= local_size)	{
+			mem[i].next = extra+(mem[i].next-mem-local_size);
+		}
+		if(i>=local_size){
+			extra[i-local_size]=mem[i];
+		}
+	}
+	
+	if(root - mem >= local_size)	
+		root = extra+(root-mem-local_size);		
+	// for(Chain *i =root->next; i!=root;i=i->next){
+	// 	if(i-mem<0||i-mem>=local_size){
+	// 		if(i-extra<0||i-extra>=this->exp->links_per_chain- local_size)
+	// 			printf("#%ld %ld \n",i-mem,i-extra);
+	// 	}		
+	// }
 	return root;
 }
 

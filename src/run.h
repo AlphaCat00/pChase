@@ -57,6 +57,7 @@ private:
 	Chain* random_mem_init(Chain *m);
 	Chain* forward_mem_init(Chain *m);
 	Chain* reverse_mem_init(Chain *m);
+	Chain* interleaved_mem_init(Chain *mem, Chain *root);
 
 	static Lock global_mutex; // global lock
 	static int64 _ops_per_chain; // total number of operations per chain

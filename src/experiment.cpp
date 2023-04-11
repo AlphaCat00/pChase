@@ -59,6 +59,7 @@ Experiment::Experiment() :
 	op_size			 (1),
     output_mode      (TABLE),
     access_pattern   (RANDOM),
+	interleaved_precent(0.0),
     stride           (1),
     numa_placement   (LOCAL),
     offset_or_mask   (0),
@@ -336,6 +337,20 @@ int Experiment::parse_args(int argc, char* argv[]) {
 				this->stride = -Experiment::parse_number(argv[i]);
 				if (this->stride == 0) {
 					strncpy(errorString, "invalid stride of reverse memory access pattern", errorStringSize);
+					error = true;
+					break;
+				}
+			} else if (strcasecmp(argv[i], "interleaved") == 0) {
+				this->access_pattern = INTERLEAVED;
+				i++;
+				if (i == argc) {
+					strncpy(errorString, "interleaved percentage missing", errorStringSize);
+					error = true;
+					break;
+				}
+				this->interleaved_precent = Experiment::parse_real(argv[i]);
+				if (this->interleaved_precent< 0||this->interleaved_precent>1) {
+					strncpy(errorString, "invalid interleaved percentage", errorStringSize);
 					error = true;
 					break;
 				}
@@ -750,8 +765,9 @@ const char* Experiment::access() {
 		result = "forward";
 	} else if (this->access_pattern == STRIDED && this->stride < 0) {
 		result = "reverse";
+	} else if (this->access_pattern == INTERLEAVED) {
+		result = "interleaved";
 	}
-
 	return result;
 }
 

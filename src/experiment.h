@@ -70,9 +70,10 @@ public:
     enum { CSV, BOTH, HEADER, TABLE }
 	output_mode;			// results output mode
 
-    enum { RANDOM, STRIDED }
+    enum { RANDOM, STRIDED, INTERLEAVED }
 	access_pattern;			// memory access pattern
     int64 stride;
+    float interleaved_precent;
 
     enum { LOCAL, XOR, ADD, MAP }
 	numa_placement;			// memory allocation mode

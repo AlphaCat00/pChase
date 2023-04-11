@@ -62,6 +62,7 @@ void Output::header(Experiment &e, int64 ops, double ck_res) {
     printf("experiments,");
     printf("access pattern,");
     printf("stride,");
+    printf("interleaved percentage,");
     printf("numa placement,");
     printf("offset or mask,");
     printf("numa domains,");
@@ -94,6 +95,7 @@ void Output::csv(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("%lld,", e.experiments);
     printf("%s,", e.access());
     printf("%lld,", e.stride);
+    printf("%f,", e.interleaved_precent);
     printf("%s,", e.placement());
     printf("%lld,", e.offset_or_mask);
     printf("%d,", e.num_numa_domains);
