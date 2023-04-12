@@ -37,12 +37,8 @@ public:
 
 	int start();
 	int wait();
-	int thread_count() {
-		return Thread::count;
-	}
-	int thread_id() {
-		return id;
-	}
+
+	int thread_id, core_id;
 
 	static void exit();
 
@@ -61,8 +57,8 @@ private:
 
 	pthread_t thread;
 
-	static int count;
-	int id;
+	// static int count;
+	// int id, core_id;
 	int lock_obj;
 };
 

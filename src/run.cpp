@@ -31,6 +31,7 @@
 #include <asmjit/core.h>
 #include <asmjit/a64.h>
 #include "timer.h"
+#include<assert.h>
 
 
 //
@@ -41,8 +42,6 @@ typedef void (*benchmark)(Chain**);
 static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp);
 
 Lock Run::global_mutex;
-int64 Run::_ops_per_chain = 0;
-std::vector<double> Run::_seconds;
 
 Run::Run() :
 		exp(NULL), bp(NULL) {
@@ -54,6 +53,16 @@ Run::~Run() {
 void Run::set(Experiment &e, SpinBarrier* sbp) {
 	this->exp = &e;
 	this->bp = sbp;
+	Thread::global_lock();
+	this->thread_id = this->exp->thread_cnt;
+	this->exp->thread_cnt += 1;
+	Thread::global_unlock();
+	this->core_id = this->thread_id;
+}
+
+void Run::set(Experiment &e, SpinBarrier* sbp, int _core_id) {
+	set(e,sbp);
+	this->core_id = _core_id;
 }
 
 int Run::run() {
@@ -67,13 +76,13 @@ int Run::run() {
 	// establish the node id where this thread
 	// will run. threads are mapped to nodes
 	// by the set-up code for Experiment.
-	int run_node_id = this->exp->thread_domain[this->thread_id()];
-	numa_run_on_node(run_node_id);
+	// int run_node_id = this->exp->thread_domain[this->thread_id];
+	// numa_run_on_node(run_node_id);
 
 	// establish the node id where this thread's
 	// memory will be allocated.
 	for (int i=0; i < this->exp->chains_per_thread; i++) {
-		int alloc_node_id = this->exp->chain_domain[this->thread_id()][i];
+		int alloc_node_id = this->exp->chain_domain[this->thread_id][i];
         bitmask* alloc_mask = numa_allocate_nodemask();
    		numa_bitmask_setbit(alloc_mask, alloc_node_id);
     	numa_set_membind(alloc_mask);
@@ -120,14 +129,14 @@ int Run::run() {
 		volatile static double istart = 0;
 		volatile static double istop = 0;
 		volatile static double elapsed = 0;
-		volatile static int64 iters = 1;
+		volatile int64 iters = 1;
 		volatile double bound = std::max(0.2, 10 * Timer::resolution());
 		for (iters = 1; elapsed <= bound; iters = iters << 1) {
 			// barrier
 			this->bp->barrier();
 
 			// start timer
-			if (this->thread_id() == 0) {
+			if (this->thread_id == 0) {
 				istart = Timer::seconds();
 			}
 			this->bp->barrier();
@@ -140,7 +149,7 @@ int Run::run() {
 			this->bp->barrier();
 
 			// stop timer
-			if (this->thread_id() == 0) {
+			if (this->thread_id == 0) {
 				istop = Timer::seconds();
 				elapsed = istop - istart;
 			}
@@ -148,7 +157,7 @@ int Run::run() {
 		}
 
 		// calculate the number of iterations
-		if (this->thread_id() == 0) {
+		if (this->thread_id == 0) {
 			if (0 < this->exp->seconds) {
 				this->exp->iterations = std::max(1.0,
 						0.9999 + 0.5 * this->exp->seconds * iters / elapsed);
@@ -167,7 +176,7 @@ int Run::run() {
 
 		// start timer
 		double start = 0;
-		if (this->thread_id() == 0)
+		if (this->thread_id == 0)
 			start = Timer::seconds();
 		this->bp->barrier();
 
@@ -180,15 +189,15 @@ int Run::run() {
 
 		// stop timer
 		double stop = 0;
-		if (this->thread_id() == 0)
+		if (this->thread_id == 0)
 			stop = Timer::seconds();
 		this->bp->barrier();
 
 		if (0 <= e) {
-			if (this->thread_id() == 0) {
+			if (this->thread_id == 0) {
 				double delta = stop - start;
 				if (0 < delta) {
-					Run::_seconds.push_back(delta);
+					this->exp->_seconds.push_back(delta);
 				}
 			}
 		}
@@ -236,7 +245,7 @@ Run::random_mem_init(Chain *mem) {
 	// we must set a lock because random()
 	// is not thread safe
 	Run::global_mutex.lock();
-	setstate(this->exp->random_state[this->thread_id()]);
+	setstate(this->exp->random_state[this->thread_id]);
 	int page_factor = prime_table[random() % prime_table_size];
 	int page_offset = random() % this->exp->pages_per_chain;
 	Run::global_mutex.unlock();
@@ -245,7 +254,7 @@ Run::random_mem_init(Chain *mem) {
 	for (int i = 0; i < this->exp->pages_per_chain; i++) {
 		int page = (page_factor * i + page_offset) % this->exp->pages_per_chain;
 		Run::global_mutex.lock();
-		setstate(this->exp->random_state[this->thread_id()]);
+		setstate(this->exp->random_state[this->thread_id]);
 		int line_factor = prime_table[random() % prime_table_size];
 		int line_offset = random() % this->exp->lines_per_page;
 		Run::global_mutex.unlock();
@@ -272,7 +281,7 @@ Run::random_mem_init(Chain *mem) {
 	prev->next = root;
 
 	Run::global_mutex.lock();
-	Run::_ops_per_chain = local_ops_per_chain;
+	this->exp->_ops_per_chain = local_ops_per_chain;
 	Run::global_mutex.unlock();
 
 	return root;
@@ -300,7 +309,7 @@ Run::forward_mem_init(Chain *mem) {
 	prev->next = root;
 
 	Run::global_mutex.lock();
-	Run::_ops_per_chain = local_ops_per_chain;
+	this->exp->_ops_per_chain = local_ops_per_chain;
 	Run::global_mutex.unlock();
 
 	return root;
@@ -334,7 +343,7 @@ Run::reverse_mem_init(Chain *mem) {
 	prev->next = root;
 
 	Run::global_mutex.lock();
-	Run::_ops_per_chain = local_ops_per_chain;
+	this->exp->_ops_per_chain = local_ops_per_chain;
 	Run::global_mutex.unlock();
 
 	return root;

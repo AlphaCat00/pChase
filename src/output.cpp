@@ -27,7 +27,9 @@
 // Implementation
 //
 
-void Output::print(Experiment &e, int64 ops, std::vector<double> seconds, double ck_res) {
+void Output::print(Experiment &e, double ck_res) {
+    int64 &ops=e._ops_per_chain;
+    std::vector<double> &seconds=e._seconds;
 	if (e.output_mode == Experiment::HEADER) {
 		Output::header(e, ops, ck_res);
 	} else if (e.output_mode == Experiment::CSV) {

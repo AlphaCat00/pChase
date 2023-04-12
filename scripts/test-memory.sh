@@ -19,11 +19,11 @@ uname -a > kernel.txt
 cat /proc/cpuinfo > cpuinfo.txt
 cat /proc/meminfo > meminfo.txt
 
-pchase=../../builddir/chase 
+pchase=../../build/release/chase 
 
 mem_bind=1
 thread_num=4
-exp=5
+exp=7
 #
 # Benchmark
 #
@@ -123,6 +123,10 @@ elif [ $exp == 5 ] ; then
     done
     python3 ../convert.py $output "chain size (bytes),memory operation,access pattern,memory latency (ns),memory bandwidth (MB/s)" > simplified_$output
 
+elif [ $exp == 6 ] ; then
+    python3 ../multi_exp.py $pchase $mem_bind $output
+elif [ $exp == 7 ] ; then
+    python3 ../multi_exp_2.py $pchase $mem_bind $output
 fi
 
 echo Benchmark ended at $(date +%Y%m%d-%H%M) | tee -a chase.log

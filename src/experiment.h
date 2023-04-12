@@ -18,6 +18,7 @@
 #if !defined(EXPERIMENT_H)
 #define EXPERIMENT_H
 
+#include<vector>
 // Local includes
 #include "chain.h"
 #include "types.h"
@@ -89,6 +90,12 @@ public:
     char** random_state;	// random state for each thread
 
     bool strict;			// strictly adhere to user input, or fail
+
+    //-----
+    int thread_cnt;
+
+	int64 _ops_per_chain; // total number of operations per chain
+	std::vector<double> _seconds; // number of seconds for each experiment
 
     const static int32 DEFAULT_POINTER_SIZE      = sizeof(Chain);
     const static int32 DEFAULT_BYTES_PER_LINE    = 64;

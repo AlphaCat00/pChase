@@ -67,7 +67,8 @@ Experiment::Experiment() :
     thread_domain    (NULL),
     chain_domain     (NULL),
     numa_max_domain  (0),
-    num_numa_domains (1)
+    num_numa_domains (1),
+	thread_cnt(0)
 {
 }
 

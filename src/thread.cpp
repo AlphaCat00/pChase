@@ -21,9 +21,9 @@
 #include <cstdio>
 #include <pthread.h>
 #include <unistd.h>
+#include<assert.h>
 
 Lock Thread::_global_lock;
-int Thread::count = 0;
 
 
 //
@@ -31,10 +31,6 @@ int Thread::count = 0;
 //
 
 Thread::Thread() {
-	Thread::global_lock();
-	this->id = Thread::count;
-	Thread::count += 1;
-	Thread::global_unlock();
 }
 
 Thread::~Thread() {
@@ -57,9 +53,8 @@ Thread::start_routine(void* p) {
 
 	// restrict to a single CPU
 	CPU_ZERO(&cs);
-	size_t size = CPU_ALLOC_SIZE(1);
-	CPU_SET_S(((Thread*) p)->id % count, size, &cs);
-	pthread_setaffinity_np(pthread_self(), size, &cs);
+	CPU_SET(((Thread*) p)->core_id % count, &cs);
+	pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cs);
 
 	// run
 	((Thread*) p)->run();

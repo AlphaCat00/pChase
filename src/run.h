@@ -41,13 +41,8 @@ public:
 	~Run();
 	int run();
 	void set(Experiment &e, SpinBarrier* sbp);
+	void set(Experiment &e, SpinBarrier* sbp, int _core_id);
 
-	static int64 ops_per_chain() {
-		return _ops_per_chain;
-	}
-	static std::vector<double> seconds() {
-		return _seconds;
-	}
 
 private:
 	Experiment* exp; // experiment data
@@ -60,8 +55,6 @@ private:
 	Chain* interleaved_mem_init(Chain *mem, Chain *root);
 
 	static Lock global_mutex; // global lock
-	static int64 _ops_per_chain; // total number of operations per chain
-	static std::vector<double> _seconds; // number of seconds for each experiment
 };
 
 #endif

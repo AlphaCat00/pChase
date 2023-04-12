@@ -16,13 +16,16 @@
 
 // System includes
 #include <cstdio>
+#include <cstring>
+#include <vector>
 
 // Local includes
+#include "assert.h"
+#include "experiment.h"
+#include "output.h"
 #include "run.h"
 #include "timer.h"
 #include "types.h"
-#include "output.h"
-#include "experiment.h"
 
 // This program allocates and accesses
 // a number of blocks of memory, one or more
@@ -55,42 +58,89 @@
 // pointers may be 32-bit or 64-bit
 // pointers.
 
-
 //
 // Implementation
 //
 
 int verbose = 0;
+const char* config_file = "pchase.conf";
+int multi_exp() {
+    Timer::calibrate(10000);
+    double clk_res = Timer::resolution();
+
+    static char buf[1024];
+    FILE* f = fopen(config_file, "r");
+    if (f == nullptr) {
+        fprintf(stderr, "fail to open the %s\n", config_file);
+        return -1;
+    }
+    uint32_t num_exps;
+    fscanf(f, "%u\n", &num_exps);
+    std::vector<Experiment> e(num_exps);
+    SpinBarrier sb(num_exps);
+    Run r[num_exps];
+
+    std::vector<char*> argv;
+    for (uint32_t i = 0; i < num_exps; ++i) {
+        argv.clear();
+        fgets(buf, 1024, f);
+        uint32_t len = strlen(buf);
+        if (buf[len - 1] == '\n') buf[len - 1] = 0;
+        for (char* p = strtok(buf, " "); p != nullptr; p = strtok(nullptr, " ")) {
+            argv.push_back(p);
+        }
+        if (e[i].parse_args(argv.size(), &argv[0]))
+            return -1;
+        assert(e[i].num_threads == 1);
+        int id;
+        sscanf(argv[0], "%d", &id);
+        r[i].set(e[i], &sb, id);
+        r[i].start();
+    }
+    fclose(f);
+
+    for (uint32_t i = 0; i < num_exps; i++) {
+        r[i].wait();
+    }
+
+    for (uint32_t i = 0; i < num_exps; i++)
+        Output::print(e[i], clk_res);
+    // Output::print(e, ops, seconds, clk_res);
+
+    return 0;
+}
 
 int main(int argc, char* argv[]) {
 #ifdef DEBUG
-	fprintf(stderr, "DEBUG (low performance)\n");
+    fprintf(stderr, "DEBUG (low performance)\n");
 #else
     fprintf(stderr, "NDEBUG\n");
 #endif
-	Timer::calibrate(10000);
-	double clk_res = Timer::resolution();
+    if (argc == 1) {
+        return multi_exp();
+    }
+    Timer::calibrate(10000);
+    double clk_res = Timer::resolution();
 
-	Experiment e;
-	if (e.parse_args(argc, argv)) {
-		return 0;
-	}
+    Experiment e;
+    if (e.parse_args(argc, argv)) {
+        return 0;
+    }
 
-	SpinBarrier sb(e.num_threads);
-	Run r[e.num_threads];
-	for (int i = 0; i < e.num_threads; i++) {
-		r[i].set(e, &sb);
-		r[i].start();
-	}
+    SpinBarrier sb(e.num_threads);
+    Run r[e.num_threads];
+    for (int i = 0; i < e.num_threads; i++) {
+        r[i].set(e, &sb);
+        r[i].start();
+    }
 
-	for (int i = 0; i < e.num_threads; i++) {
-		r[i].wait();
-	}
+    for (int i = 0; i < e.num_threads; i++) {
+        r[i].wait();
+    }
 
-	int64 ops = Run::ops_per_chain();
-	std::vector<double> seconds = Run::seconds();
+    Output::print(e, clk_res);
 
-	Output::print(e, ops, seconds, clk_res);
-
-	return 0;
+    return 0;
 }
+
+
