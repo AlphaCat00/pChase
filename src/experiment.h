@@ -64,7 +64,7 @@ public:
     enum { NONE, T0, T1, T2, NTA }
     prefetch_hint;			// use of prefetching
 
-    enum { NA, LOAD, STORE, ITER_LOAD, ITER_STORE }
+    enum { NA, LOAD, STORE, ITER_LOAD, ITER_STORE, COPY, ITER_COPY}
 	mem_operation;			// memory operation
     int64 op_size;
 
@@ -121,6 +121,8 @@ public:
 	void alloc_add();
 	void alloc_map();
 
+    inline bool is_iter() { return mem_operation== ITER_LOAD || mem_operation == ITER_STORE || mem_operation == ITER_COPY; }
+    inline bool is_copy() { return mem_operation == COPY || mem_operation == ITER_COPY;}
 
 private:
 };
@@ -141,7 +143,7 @@ inline const char* prefetch_hint_string(int32 prefetch_hint) {
 }
 
 inline const char* operation_string(int32 operation) {
-    static const char *strings[]={"none", "load", "store", "iter_load", "iter_store"};
+    static const char *strings[]={"none", "load", "store", "iter_load", "iter_store", "copy", "iter_copy"};
     return strings[operation];
 }
 

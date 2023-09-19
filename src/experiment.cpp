@@ -284,6 +284,10 @@ int Experiment::parse_args(int argc, char* argv[]) {
 				this->mem_operation = Experiment::ITER_LOAD;
 			} else if (strcasecmp(argv[i], "iter_store") == 0) {
 				this->mem_operation = Experiment::ITER_STORE;
+			} else if (strcasecmp(argv[i], "copy") == 0) {
+				this->mem_operation = Experiment::COPY;
+			} else if (strcasecmp(argv[i], "iter_copy") == 0) {
+				this->mem_operation = Experiment::ITER_COPY;
 			} else {
 				snprintf(errorString, errorStringSize, "invalid type of operartion -- '%s'", argv[i]);
 				error = true;

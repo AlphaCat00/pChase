@@ -15,7 +15,7 @@ if numa_dep.found()
     dependencies += [numa_dep]
 endif
 
-dependencies += [dependency('threads')]
+dependencies += [dependency('threads'), dependency('memkind')]
 
 cmake = import('cmake')
 opt_var = cmake.subproject_options()

@@ -103,7 +103,7 @@ int multi_exp() {
         r[i].wait();
     }
 
-    for (uint32_t i = 0; i < num_exps; i++)
+    for (uint32_t i = 0; i < 1; i++)
         Output::print(e[i], clk_res);
     // Output::print(e, ops, seconds, clk_res);
 

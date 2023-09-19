@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <cstddef>
 #include <algorithm>
+#include <memkind.h>
 #if defined(NUMA)
 #include <numa.h>
 #endif
@@ -38,7 +39,7 @@
 // Implementation
 //
 
-typedef void (*benchmark)(Chain**);
+typedef void (*benchmark)(Chain**, Chain**);
 static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp);
 
 Lock Run::global_mutex;
@@ -72,6 +73,7 @@ int Run::run() {
 	Chain** chain_memory = new Chain*[this->exp->chains_per_thread];
 	Chain** root = new Chain*[this->exp->chains_per_thread];
 
+	size_t chain_size = (this->exp->links_per_chain + this->exp->op_size * this->exp->links_per_line) * sizeof(Chain);
 #if defined(NUMA)
 	// establish the node id where this thread
 	// will run. threads are mapped to nodes
@@ -81,15 +83,10 @@ int Run::run() {
 
 	// establish the node id where this thread's
 	// memory will be allocated.
-	for (int i=0; i < this->exp->chains_per_thread; i++) {
-		int alloc_node_id = this->exp->chain_domain[this->thread_id][i];
-        bitmask* alloc_mask = numa_allocate_nodemask();
-   		numa_bitmask_setbit(alloc_mask, alloc_node_id);
-    	numa_set_membind(alloc_mask);
-    	numa_bitmask_free(alloc_mask);
-
-		chain_memory[i] = new Chain[ this->exp->links_per_chain + this->exp->op_size*this->exp->links_per_line];
-	}
+    for (int i = 0; i < this->exp->chains_per_thread; i++) {
+        int node = this->exp->chain_domain[this->thread_id][i];        
+        chain_memory[i] = (Chain*)numa_alloc_onnode(chain_size, node);
+    }
 #else
 	for (int i = 0; i < this->exp->chains_per_thread; i++) {
 		chain_memory[i] = new Chain[this->exp->links_per_chain];
@@ -143,7 +140,7 @@ int Run::run() {
 
 			// chase pointers
 			for (int i = 0; i < iters; i++)
-				bench(root);
+				bench(root, chain_memory);
 
 			// barrier
 			this->bp->barrier();
@@ -182,7 +179,7 @@ int Run::run() {
 
 		// chase pointers
 		for (int i = 0; i < this->exp->iterations; i++)
-			bench(root);
+			bench(root, chain_memory);
 
 		// barrier
 		this->bp->barrier();
@@ -207,11 +204,9 @@ int Run::run() {
 
 	// clean the memory
 	for (int i = 0; i < this->exp->chains_per_thread; i++) {
-		if (chain_memory[i] != NULL
-			) delete[] chain_memory[i];
+		if (chain_memory[i] != NULL) numa_free(chain_memory[i], chain_size);
 	}
-	if (chain_memory != NULL
-		) delete[] chain_memory;
+	if (chain_memory != NULL) delete[] chain_memory;
 
 	return 0;
 }
@@ -381,22 +376,31 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 	using namespace asmjit;
 	using namespace a64;
 
-	bool is_iter=exp.mem_operation==Experiment::ITER_LOAD||exp.mem_operation==Experiment::ITER_STORE;
-	if(is_iter){
+	if(exp.is_iter()){
 		if(exp.access_pattern != Experiment::STRIDED||exp.stride<1){
 			fprintf(stderr, "access pattern not supported.\n");
 			return 0;
 		}
 	}
+	if(exp.is_copy() && (exp.chains_per_thread&1)) {
+		fprintf(stderr, "odd numbers of chains are required\n");
+		return 0;
+	}
+
 	// Create Compiler.
 	CodeHolder code;                  // Holds code and relocation information.
   	code.init(rt.environment());      // Initialize code to match the JIT environment. 
 
 	Compiler c(&code);	// Create and attach Compiler to code.
 
+#ifdef DEBUG
+	FileLogger logger(stdout);
+	code.setLogger(&logger);
+#endif
+
   	// Tell compiler the function prototype we want. It allocates variables representing
 	// function arguments that can be accessed through Compiler or Function instance.
-	FuncNode* funcNode = c.addFunc(FuncSignatureT<void, Chain**>());
+	FuncNode* funcNode = c.addFunc(FuncSignatureT<void, Chain**, Chain**>());
 
 	// Try to generate function without prolog/epilog code:
 	// c.getFunction()->setHint(asmjit::FUNCTION_HINT_NAKED, true);
@@ -405,14 +409,15 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 	Label L_Loop = c.newLabel();
 
 	// Function arguments.
-	Gp chain=c.newUIntPtr();
-	funcNode->setArg(0,chain);
+	Gp root=c.newUIntPtr(), chain=c.newUIntPtr();
+	funcNode->setArg(0,root);
+	funcNode->setArg(1,chain);
 
 
 	// Save the head
 	Gp end = c.newUIntPtr(), bytes=c.newInt64();
-	c.ldr(end, ptr(chain));
-	if(is_iter) {
+	c.ldr(end, ptr(root));
+	if(exp.is_iter()) {
 		c.mov(bytes, exp.bytes_per_line * exp.lines_per_chain);
 		c.add(end, end, bytes);
 		c.mov(bytes, exp.bytes_per_line * exp.stride);
@@ -420,9 +425,20 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 
 	// Current position
 	std::vector<Gp> positions(exp.chains_per_thread);
+	std::vector<Gp> offsets(exp.chains_per_thread/2);
 	for (int i = 0; i < exp.chains_per_thread; i++) {
 		positions[i] = c.newUIntPtr();
-		c.ldr(positions[i], ptr(chain,i*sizeof(Chain *)));
+		c.ldr(positions[i], ptr(root, i*sizeof(Chain *)));
+	}
+
+	if(exp.is_copy()){
+		Gp tmp0=c.newUIntPtr(), tmp1=c.newUIntPtr();
+		for (int i = 0; i < exp.chains_per_thread; i+=2) {
+			c.ldr(tmp0, ptr(chain, i*sizeof(Chain *)));
+			c.ldr(tmp1, ptr(chain, (i+1)*sizeof(Chain *)));
+			offsets[i/2] = c.newInt64();
+			c.sub(offsets[i/2], tmp1, tmp0);
+		}
 	}
 
 	std::vector<std::vector<Gp>> vals(exp.chains_per_thread);
@@ -438,9 +454,9 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 	c.bind(L_Loop);
 
 	// Process all links
-	for (int i = 0; i < exp.chains_per_thread; i++) {
+	for (int i = 0; i < exp.chains_per_thread; i+= exp.is_copy()? 2:1) {
 		// Chase pointer
-		if(!is_iter) c.ldr(positions[i], ptr(positions[i], offsetof(Chain, next)));
+		if(!exp.is_iter()) c.ldr(positions[i], ptr(positions[i], offsetof(Chain, next)));	
 		switch (exp.mem_operation)
 		{
 		case Experiment::ITER_LOAD:
@@ -453,28 +469,17 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 			for (uint32_t j = 0; j < exp.op_size; j++) 
 				c.str(vals[i][j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
 			break;
+		case Experiment::ITER_COPY:
+		case Experiment::COPY:
+			c.add(positions[i+1], positions[i], offsets[i/2]);
+			for (uint32_t j = 0; j < exp.op_size; j++) {				
+				c.ldr(vals[i][j], ptr(positions[i], j*exp.bytes_per_line + offsetof(Chain, data)));
+				c.str(vals[i][j], ptr(positions[i+1], j*exp.bytes_per_line + offsetof(Chain, data)));
+			}
+			break;
 		case Experiment::NA:;
 		}
-		if(is_iter) c.add(positions[i], positions[i], bytes); // only work for forward access
-		// Prefetch next
-		// switch (prefetch_hint)
-		// {
-		// case Experiment::T0:
-		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_T0);
-		// 	break;
-		// case Experiment::T1:
-		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_T1);
-		// 	break;
-		// case Experiment::T2:
-		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_T2);
-		// 	break;
-		// case Experiment::NTA:
-		// 	c.prefetch(ptr(positions[i]), asmjit::PREFETCH_NTA);
-		// 	break;
-		// case Experiment::NONE:
-		// default:
-		// 	break;
-		// }
+		if(exp.is_iter()) c.add(positions[i], positions[i], bytes); // only work for forward access
 	}
 
 	// Wait
@@ -483,7 +488,7 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 
 	// Test if end reached
 	c.cmp(positions[0],end);
-	c.b(is_iter? CondCode::kCC:CondCode::kNE, L_Loop);
+	c.b(exp.is_iter()? CondCode::kCC:CondCode::kNE, L_Loop);
 
 
 	// Finish.
@@ -498,6 +503,5 @@ static benchmark chase_pointers(asmjit::JitRuntime &rt,	Experiment &exp) {
 		printf("Error making jit function (%u).\n", err);
 		return 0;
 	}
-
 	return fn;
 }

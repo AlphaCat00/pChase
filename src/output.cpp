@@ -80,6 +80,12 @@ void Output::header(Experiment &e, int64 ops, double ck_res) {
     fflush(stdout);
 }
 
+inline double bandwidth(Experiment &e, int64 ops, double secs){
+    double ret = ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * e.op_size)/ secs) * 1E-6;
+    if(e.is_copy()) ret/=2.0;
+    return ret;
+}
+
 void Output::csv(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("%lld,", e.pointer_size);
     printf("%lld,", e.bytes_per_line);
@@ -121,7 +127,7 @@ void Output::csv(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("%.0f,", secs/ck_res);
     printf("%.2f,", ck_res * 1E9);
     printf("%.2f,", (secs / (ops * e.iterations)) * 1E9);
-    printf("%.3f\n", ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * e.op_size) / secs) * 1E-6);
+    printf("%.3f\n", bandwidth(e, ops, secs));
 
     fflush(stdout);
 }
@@ -167,7 +173,7 @@ void Output::table(Experiment &e, int64 ops, double secs, double ck_res) {
     printf("elapsed time         = %.0f (timer ticks)\n", secs/ck_res);
     printf("clock resolution     = %.2f (ns)\n", ck_res * 1E9);
     printf("memory latency       = %.2f (ns)\n", (secs / (ops * e.iterations)) * 1E9);
-    printf("memory bandwidth     = %.3f (MB/s)\n", ((ops * e.iterations * e.chains_per_thread * e.num_threads * e.bytes_per_line * e.op_size) / secs) * 1E-6);
+    printf("memory bandwidth     = %.3f (MB/s)\n",  bandwidth(e, ops, secs));
 
     fflush(stdout);
 }

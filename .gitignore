@@ -20,7 +20,9 @@ core
 
 .vscode
 
-builddir
+build
 subprojects/asmjit
 
 scripts/chase-*
+
+pchase.conf

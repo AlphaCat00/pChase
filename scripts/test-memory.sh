@@ -21,9 +21,10 @@ cat /proc/meminfo > meminfo.txt
 
 pchase=../../build/release/chase 
 
-mem_bind=1
+mem_bind=0
+mem_bind_1=0
 thread_num=4
-exp=7
+exp=10
 #
 # Benchmark
 #
@@ -61,7 +62,7 @@ if [ $exp == 0 ] ; then
                     elif [ "$mem_op" == "store_all" ] ; then
                         mem_op_="store $stride"
                     fi
-                    $pchase -c 256k -p 256k -m $mem_op_ -a $access_ -s 3.0 -t $thread -n map $t_map -o csv | tee -a $output
+                    $pchase -c 32m -p 32m -m $mem_op_ -a $access_ -s 3.0 -t $thread -n map $t_map -o csv | tee -a $output
                 done
             done
         done
@@ -127,6 +128,31 @@ elif [ $exp == 6 ] ; then
     python3 ../multi_exp.py $pchase $mem_bind $output
 elif [ $exp == 7 ] ; then
     python3 ../multi_exp_2.py $pchase $mem_bind $output
+elif [ $exp == 8 ] ; then
+    python3 ../multi_exp_3.py $pchase $mem_bind $output
+elif [ $exp == 9 ] ; then
+    for access in random forward  # reverse
+    do
+        for op_size in 1 2 4 8 16 ; do 
+            for thread in `seq 1 $thread_num`; do
+                for i in `seq 1 $thread`; do
+                    if [ $i == 1 ] ; then
+                        t_map="0:$mem_bind,$mem_bind_1"
+                    else
+                        t_map="${t_map};0:$mem_bind,$mem_bind_1"
+                    fi                
+                done  
+                access_=$access   
+                if [ $access != "random" ] ; then
+                    access_="$access $op_size"
+                fi 
+                $pchase -c 32m -p 32m -a $access_ -m copy $op_size -s 3.0 -n map $t_map -o csv | tee -a $output
+            done
+        done
+    done
+    python3 ../convert.py $output "memory operation,operation size,access pattern,number of threads,memory latency (ns),memory bandwidth (MB/s)" > simplified_$output
+elif [ $exp == 10 ] ; then
+    python3 ../cache_pollution.py $pchase $mem_bind $mem_bind_1 $output
 fi
 
 echo Benchmark ended at $(date +%Y%m%d-%H%M) | tee -a chase.log
