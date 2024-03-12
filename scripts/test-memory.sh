@@ -21,8 +21,8 @@ cat /proc/meminfo > meminfo.txt
 
 pchase=../../build/release/chase 
 
-mem_bind=0
-mem_bind_1=0
+mem_bind=1
+mem_bind_1=2
 thread_num=4
 exp=10
 #
